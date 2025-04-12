@@ -1,0 +1,29 @@
+services:
+  app:
+    image: avitopvz
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config_prod.yml:/config.yml
+    depends_on:
+      - postgres
+    networks:
+      - network
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env.postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - network
+
+volumes:
+  postgres-data:
+networks:
+  network:
