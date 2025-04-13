@@ -22,7 +22,7 @@ func NewHandler(loginLogin login) *Handler {
 }
 
 func (h *Handler) Register(ctx *fiber.Ctx) error {
-	var req userLoginIn
+	var req UserLoginIn
 
 	if err := ctx.BodyParser(&req); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(models.ErrorResp{

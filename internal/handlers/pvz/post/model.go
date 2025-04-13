@@ -17,7 +17,7 @@ func (u *pvzPostReq) validate() (models.PVZCity, error) {
 	}
 
 	if !models.IsPVZCity(models.PVZCity(u.City)) {
-		return "", fmt.Errorf("%s: %w", models.ErrValidation, "city is not allowed")
+		return "", fmt.Errorf("%w: %s", models.ErrValidation, "city is not allowed")
 	}
 
 	return models.PVZCity(u.City), nil

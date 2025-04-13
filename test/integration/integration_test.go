@@ -1,5 +1,4 @@
-// File: integration_test.go
-package integration_test
+package integration
 
 import (
 	"bytes"
@@ -155,6 +154,9 @@ func closeReception(app *fiber.App, token, pvzID string) (*models.Reception, err
 }
 
 func TestIntegrationFullFlow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode.")
+	}
 	app := fiber.New()
 
 	pathToConfig := "../../config_prod.yml"

@@ -9,12 +9,12 @@ import (
 	"AvitoPVZ/internal/models"
 )
 
-type userLoginIn struct {
+type UserLoginIn struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,max=255"`
 }
 
-func (u *userLoginIn) validate() (string, string, error) {
+func (u *UserLoginIn) validate() (string, string, error) {
 	validate := validator.New()
 	if err := validate.Struct(u); err != nil {
 		return "", "", fmt.Errorf("%s: %w", models.ErrValidation, err)
