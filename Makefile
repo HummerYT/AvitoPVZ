@@ -11,8 +11,7 @@ unit:
 	go test ./... -short
 
 cover:
-	go test -coverprofile="coverage.out" ./... -short
-	go tool cover -func="coverage.out"
+	sh run_tests.sh
 
 integration: up
 	go test test/integration

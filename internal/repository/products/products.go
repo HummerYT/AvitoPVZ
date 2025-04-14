@@ -1,3 +1,5 @@
+//go:generate mockgen -source=products.go -destination=mocks/products.go -package=mocks $GOPACKAGE
+//go:generate mockgen -destination=mocks/mock_tx.go -package=mocks github.com/jackc/pgx/v5 Tx
 package products
 
 import (
@@ -5,23 +7,25 @@ import (
 	"fmt"
 	"time"
 
+	"AvitoPVZ/internal/models"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"AvitoPVZ/internal/models"
 )
 
-type ProductRepositoryPg struct {
-	pool *pgxpool.Pool
+type DB interface {
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
 }
 
-func NewProductRepositoryPg(pool *pgxpool.Pool) *ProductRepositoryPg {
-	return &ProductRepositoryPg{pool: pool}
+type ProductRepositoryPg struct {
+	db DB
+}
+
+func NewProductRepositoryPg(db DB) *ProductRepositoryPg {
+	return &ProductRepositoryPg{db: db}
 }
 
 func (r *ProductRepositoryPg) CreateProductTransactional(ctx context.Context, pvzID uuid.UUID, productType models.TypeProduct) (models.Product, error) {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return models.Product{}, fmt.Errorf("begin transaction: %w", err)
 	}
@@ -69,7 +73,7 @@ func (r *ProductRepositoryPg) CreateProductTransactional(ctx context.Context, pv
 }
 
 func (r *ProductRepositoryPg) DeleteLastProductTransactional(ctx context.Context, pvzID string) error {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}

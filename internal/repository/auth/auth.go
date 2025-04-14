@@ -1,3 +1,5 @@
+//go:generate mockgen -source=auth.go -destination=mocks/auth.go -package=mocks $GOPACKAGE
+//go:generate mockgen -destination=mocks/mock_tx.go -package=mocks github.com/jackc/pgx/v5 Tx
 package auth
 
 import (
