@@ -9,7 +9,7 @@ import (
 
 func DummyLoginHandler(c *fiber.Ctx) error {
 	var req struct {
-		Role string `json:"role"` // employee или moderator
+		Role string `json:"role"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {

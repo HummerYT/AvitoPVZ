@@ -14,15 +14,15 @@ import (
 )
 
 type ReceptionRepositoryPg struct {
-	pool *pgxpool.Pool
+	Pool *pgxpool.Pool
 }
 
 func NewReceptionRepositoryPg(pool *pgxpool.Pool) *ReceptionRepositoryPg {
-	return &ReceptionRepositoryPg{pool: pool}
+	return &ReceptionRepositoryPg{Pool: pool}
 }
 
 func (r *ReceptionRepositoryPg) CreateReceptionTransactional(ctx context.Context, pvzID uuid.UUID) (models.Reception, error) {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return models.Reception{}, fmt.Errorf("begin transaction: %w", err)
 	}
@@ -66,7 +66,7 @@ func (r *ReceptionRepositoryPg) CreateReceptionTransactional(ctx context.Context
 }
 
 func (r *ReceptionRepositoryPg) CloseLastReceptionTransactional(ctx context.Context, pvzID string) (models.Reception, error) {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return models.Reception{}, fmt.Errorf("begin transaction: %w", err)
 	}

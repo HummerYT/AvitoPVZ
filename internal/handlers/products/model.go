@@ -7,12 +7,12 @@ import (
 	"github.com/google/uuid"
 )
 
-type reqProducts struct {
+type ReqProducts struct {
 	Type  string `json:"type" validate:"required"`
 	PvzID string `json:"pvzId" validate:"required,uuid"`
 }
 
-func (u *reqProducts) validate() (models.TypeProduct, uuid.UUID, error) {
+func (u *ReqProducts) validate() (models.TypeProduct, uuid.UUID, error) {
 	validate := validator.New()
 	if err := validate.Struct(u); err != nil {
 		return "", uuid.UUID{}, fmt.Errorf("%s: %w", models.ErrValidation, err)

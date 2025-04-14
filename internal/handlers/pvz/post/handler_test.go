@@ -1,166 +1,163 @@
-package post_test
+package post
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/google/uuid"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"AvitoPVZ/internal/handlers/post"
 	"AvitoPVZ/internal/models"
 )
 
-// --- Мок ---
 type mockPVZUseCase struct {
-	mock.Mock
+	pvz models.PVZ
+	err error
 }
 
 func (m *mockPVZUseCase) CreatePVZ(ctx context.Context, city models.PVZCity) (models.PVZ, error) {
-	args := m.Called(ctx, city)
-	return args.Get(0).(models.PVZ), args.Error(1)
+	return m.pvz, m.err
 }
 
-// --- Тестовая структура ---
-type CreatePVZSuite struct {
+type CreatePVZHandlerTestSuite struct {
 	suite.Suite
-	app  *fiber.App
-	mock *mockPVZUseCase
+	app     *fiber.App
+	uc      *mockPVZUseCase
+	handler *CreatePVZHandler
 }
 
-// --- Setup ---
-func (s *CreatePVZSuite) SetupTest() {
-	s.app = fiber.New()
-	s.mock = new(mockPVZUseCase)
-	handler := post.NewCreatePVZHandler(s.mock)
+func (suite *CreatePVZHandlerTestSuite) SetupTest() {
+	suite.app = fiber.New()
 
-	s.app.Post("/pvz", func(c *fiber.Ctx) error {
-		c.Locals("Role", s.T().Context().Value("role"))
-		return handler.Handle(c)
+	suite.app.Use(func(c *fiber.Ctx) error {
+		if role := c.Get("X-Role"); role != "" {
+			c.Locals("Role", models.UserRole(role))
+		}
+		return c.Next()
 	})
+
+	suite.uc = &mockPVZUseCase{}
+	suite.handler = NewCreatePVZHandler(suite.uc)
+
+	suite.app.Post("/pvz", suite.handler.Handle)
 }
 
-// --- Успешный кейс ---
-func (s *CreatePVZSuite) TestHandle_Success() {
-	// Arrange
-	body := `{"city":"Москва"}`
-	city := models.PVZCity("Москва")
-	expectedPVZ := models.PVZ{
-		ID:               "pvz-1",
-		City:             city,
-		RegistrationDate: time.Now(),
+func (suite *CreatePVZHandlerTestSuite) TestAccessDenied() {
+	reqBody := `{"city": "Москва"}`
+	req := httptest.NewRequest("POST", "/pvz", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Role", "employee") // неверная роль
+
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
+
+	suite.Equal(http.StatusForbidden, resp.StatusCode)
+	var body models.ErrorResp
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	suite.Require().NoError(err)
+	suite.Equal("access denied", body.Message)
+}
+
+func (suite *CreatePVZHandlerTestSuite) TestBadBody() {
+	req := httptest.NewRequest("POST", "/pvz", strings.NewReader("invalid-json"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Role", string(models.RoleModerator))
+
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
+
+	suite.Equal(http.StatusBadRequest, resp.StatusCode)
+	var body models.ErrorResp
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	suite.Require().NoError(err)
+	suite.Equal("bad request", body.Message)
+}
+
+func (suite *CreatePVZHandlerTestSuite) TestValidationErrorMissingCity() {
+	req := httptest.NewRequest("POST", "/pvz", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Role", string(models.RoleModerator))
+
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
+
+	suite.Equal(http.StatusBadRequest, resp.StatusCode)
+	var body models.ErrorResp
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	suite.Require().NoError(err)
+	suite.Contains(body.Message, "bad request:")
+}
+
+func (suite *CreatePVZHandlerTestSuite) TestValidationErrorInvalidCity() {
+	req := httptest.NewRequest("POST", "/pvz", strings.NewReader(`{"city": "NewYork"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Role", string(models.RoleModerator))
+
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
+
+	suite.Equal(http.StatusBadRequest, resp.StatusCode)
+	var body models.ErrorResp
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	suite.Require().NoError(err)
+	suite.Contains(body.Message, "bad request:")
+	suite.Contains(body.Message, "city is not allowed")
+}
+
+func (suite *CreatePVZHandlerTestSuite) TestUseCaseError() {
+	reqBody := `{"city": "Москва"}`
+	req := httptest.NewRequest("POST", "/pvz", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Role", string(models.RoleModerator))
+
+	suite.uc.err = errors.New("use case error")
+
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
+
+	suite.Equal(http.StatusBadRequest, resp.StatusCode)
+	var body models.ErrorResp
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	suite.Require().NoError(err)
+	suite.Contains(body.Message, "create pvz failed")
+}
+
+func (suite *CreatePVZHandlerTestSuite) TestSuccess() {
+	reqBody := `{"city": "Москва"}`
+	req := httptest.NewRequest("POST", "/pvz", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Role", string(models.RoleModerator))
+
+	fixedTime := time.Date(2025, 4, 13, 12, 0, 0, 0, time.UTC)
+	pvz := models.PVZ{
+		ID:               uuid.New().String(),
+		RegistrationDate: fixedTime,
+		City:             "Moscow",
 	}
+	suite.uc.err = nil
+	suite.uc.pvz = pvz
 
-	s.mock.On("CreatePVZ", mock.Anything, city).Return(expectedPVZ, nil)
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
+	suite.Equal(http.StatusCreated, resp.StatusCode)
 
-	req := httptest.NewRequest("POST", "/pvz", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleModerator))
+	var body map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	suite.Require().NoError(err)
+	suite.Equal(pvz.ID, body["id"])
+	suite.Equal(pvz.City, body["city"])
 
-	// Act
-	resp, err := s.app.Test(req)
-
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(201, resp.StatusCode)
-
-	var response map[string]any
-	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&response))
-	s.Equal(expectedPVZ.ID, response["id"])
-	s.Equal(string(expectedPVZ.City), response["city"])
-
-	s.mock.AssertExpectations(s.T())
+	expectedRegDate := fixedTime.Format(time.RFC3339Nano)
+	suite.Equal(expectedRegDate, body["registrationDate"])
 }
 
-// --- Ошибка доступа ---
-func (s *CreatePVZSuite) TestHandle_Forbidden() {
-	// Arrange
-	req := httptest.NewRequest("POST", "/pvz", nil)
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleEmployee))
-
-	// Act
-	resp, err := s.app.Test(req)
-
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(403, resp.StatusCode)
-}
-
-// --- Ошибка парсинга JSON ---
-func (s *CreatePVZSuite) TestHandle_BadRequest_InvalidJSON() {
-	// Arrange
-	req := httptest.NewRequest("POST", "/pvz", bytes.NewBufferString(`invalid-json`))
-	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleModerator))
-
-	// Act
-	resp, err := s.app.Test(req)
-
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(400, resp.StatusCode)
-}
-
-// --- Ошибка валидации (пустой город) ---
-func (s *CreatePVZSuite) TestHandle_BadRequest_ValidationError() {
-	// Arrange
-	body := `{"city":""}`
-	req := httptest.NewRequest("POST", "/pvz", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleModerator))
-
-	// Act
-	resp, err := s.app.Test(req)
-
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(400, resp.StatusCode)
-}
-
-// --- Ошибка валидации (город не из списка) ---
-func (s *CreatePVZSuite) TestHandle_BadRequest_InvalidCity() {
-	// Arrange
-	body := `{"city":"Готэм"}`
-	req := httptest.NewRequest("POST", "/pvz", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleModerator))
-
-	// Act
-	resp, err := s.app.Test(req)
-
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(400, resp.StatusCode)
-}
-
-// --- Ошибка из UseCase ---
-func (s *CreatePVZSuite) TestHandle_UseCaseError() {
-	// Arrange
-	city := models.PVZCity("Москва")
-	body := `{"city":"Москва"}`
-	s.mock.On("CreatePVZ", mock.Anything, city).
-		Return(models.PVZ{}, errors.New("db is down"))
-
-	req := httptest.NewRequest("POST", "/pvz", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleModerator))
-
-	// Act
-	resp, err := s.app.Test(req)
-
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(400, resp.StatusCode)
-	s.mock.AssertExpectations(s.T())
-}
-
-// --- Запуск ---
-func TestCreatePVZSuite(t *testing.T) {
-	suite.Run(t, new(CreatePVZSuite))
+func TestCreatePVZHandlerTestSuite(t *testing.T) {
+	suite.Run(t, new(CreatePVZHandlerTestSuite))
 }

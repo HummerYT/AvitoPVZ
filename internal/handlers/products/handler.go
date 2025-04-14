@@ -30,7 +30,7 @@ func (h *ProductHandler) CreateProduct(c *fiber.Ctx) error {
 		})
 	}
 
-	var req reqProducts
+	var req ReqProducts
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(http.StatusBadRequest).JSON(models.ErrorResp{
 			Message: "Bad Request",

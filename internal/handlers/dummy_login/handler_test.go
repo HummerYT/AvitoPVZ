@@ -1,7 +1,6 @@
 package dummy_login_test
 
 import (
-	"AvitoPVZ/internal/handlers/dummy_login"
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
@@ -11,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
+	"AvitoPVZ/internal/handlers/dummy_login"
 	"AvitoPVZ/internal/models"
 )
 
@@ -20,9 +20,6 @@ type DummyLoginTestSuite struct {
 }
 
 func (suite *DummyLoginTestSuite) SetupTest() {
-	// Инициализируем Fiber-приложение и регистрируем маршрут.
-	// В цепочке вызовов первый middleware — DummyLoginHandler,
-	// а второй (финальный) возвращает установленные значения в JSON-формате.
 	suite.app = fiber.New()
 	suite.app.Post("/login", dummy_login.DummyLoginHandler, func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -33,15 +30,10 @@ func (suite *DummyLoginTestSuite) SetupTest() {
 }
 
 func (suite *DummyLoginTestSuite) TestInvalidJSON() {
-	// Arrange: создаём запрос с некорректным JSON
 	req := httptest.NewRequest("POST", "/login", bytes.NewBufferString("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
-
-	// Act: отправляем запрос через тестовое приложение
 	resp, err := suite.app.Test(req)
 	suite.NoError(err)
-
-	// Assert: ожидаем статус 400 и сообщение об ошибке в теле ответа
 	suite.Equal(fiber.StatusBadRequest, resp.StatusCode)
 
 	var errResp models.ErrorResp
@@ -51,16 +43,11 @@ func (suite *DummyLoginTestSuite) TestInvalidJSON() {
 }
 
 func (suite *DummyLoginTestSuite) TestInvalidRole() {
-	// Arrange: создаём запрос с корректным JSON, но неверной ролью "admin"
 	body := `{"role": "admin"}`
 	req := httptest.NewRequest("POST", "/login", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
-
-	// Act
 	resp, err := suite.app.Test(req)
 	suite.NoError(err)
-
-	// Assert
 	suite.Equal(fiber.StatusBadRequest, resp.StatusCode)
 	var errResp models.ErrorResp
 	err = json.NewDecoder(resp.Body).Decode(&errResp)
@@ -69,17 +56,15 @@ func (suite *DummyLoginTestSuite) TestInvalidRole() {
 }
 
 func (suite *DummyLoginTestSuite) TestValidLogin() {
-	// Arrange: создаём запрос с корректным JSON, роль "employee"
+
 	body := `{"role": "employee"}`
 	req := httptest.NewRequest("POST", "/login", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Act
 	resp, err := suite.app.Test(req)
 	suite.NoError(err)
 	suite.Equal(fiber.StatusOK, resp.StatusCode)
 
-	// Assert: проверяем, что ответ содержит корректные значения
 	var data map[string]interface{}
 	err = json.NewDecoder(resp.Body).Decode(&data)
 	suite.NoError(err)

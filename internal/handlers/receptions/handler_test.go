@@ -1,22 +1,23 @@
 package receptions_test
 
 import (
-	"AvitoPVZ/internal/handlers/receptions"
-	"AvitoPVZ/internal/models"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http/httptest"
+	"testing"
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	"net/http/httptest"
-	"testing"
-	"time"
+
+	"AvitoPVZ/internal/handlers/receptions"
+	"AvitoPVZ/internal/models"
 )
 
-// --- Мок UseCase ---
 type mockReceptionUseCase struct {
 	mock.Mock
 }
@@ -26,34 +27,35 @@ func (m *mockReceptionUseCase) CreateReception(ctx context.Context, pvzID uuid.U
 	return args.Get(0).(models.Reception), args.Error(1)
 }
 
-// --- Тестовая структура ---
 type ReceptionHandlerSuite struct {
 	suite.Suite
 	app  *fiber.App
 	mock *mockReceptionUseCase
 }
 
-// --- Setup ---
 func (s *ReceptionHandlerSuite) SetupTest() {
 	s.app = fiber.New()
 	s.mock = new(mockReceptionUseCase)
 	handler := receptions.NewReceptionHandler(s.mock)
 
-	s.app.Post("/reception", func(c *fiber.Ctx) error {
-		c.Locals("Role", s.T().Context().Value("role"))
-		return handler.CreateReception(c)
+	s.app.Use(func(c *fiber.Ctx) error {
+		if role := c.Get("X-Role"); role != "" {
+			c.Locals("Role", models.UserRole(role))
+		}
+		return c.Next()
 	})
+
+	s.app.Post("/reception", handler.CreateReception)
 }
 
-// --- Успешный кейс ---
 func (s *ReceptionHandlerSuite) Test_CreateReception_Success() {
-	// Arrange
 	pvzID := uuid.New()
+	id := uuid.New()
 	expected := models.Reception{
-		ID:       "rec-1",
+		ID:       id,
 		PvzID:    pvzID,
 		DateTime: time.Now(),
-		Status:   "open",
+		Status:   models.StatusInProgress,
 	}
 	s.mock.On("CreateReception", mock.Anything, pvzID).Return(expected, nil)
 
@@ -62,92 +64,72 @@ func (s *ReceptionHandlerSuite) Test_CreateReception_Success() {
 
 	req := httptest.NewRequest("POST", "/reception", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleEmployee))
+	req.Header.Set("X-Role", string(models.RoleEmployee))
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(201, resp.StatusCode)
 
 	var result map[string]interface{}
 	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&result))
-	s.Equal(expected.ID, result["id"])
+	s.Equal(expected.ID.String(), result["id"])
 	s.Equal(expected.PvzID.String(), result["pvzId"])
-	s.Equal(expected.Status, result["status"])
+	s.Equal(string(expected.Status), result["status"])
 
 	s.mock.AssertExpectations(s.T())
 }
 
-// --- Ошибка: Нет доступа ---
 func (s *ReceptionHandlerSuite) Test_CreateReception_Forbidden() {
-	// Arrange
 	req := httptest.NewRequest("POST", "/reception", nil)
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleClient))
+	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleModerator))
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(403, resp.StatusCode)
 }
 
-// --- Ошибка: Невалидный JSON ---
 func (s *ReceptionHandlerSuite) Test_CreateReception_BadJSON() {
-	// Arrange
 	req := httptest.NewRequest("POST", "/reception", bytes.NewBufferString("{bad json"))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleEmployee))
+	req.Header.Set("X-Role", string(models.RoleEmployee))
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(400, resp.StatusCode)
 }
 
-// --- Ошибка: Пустой pvzId ---
 func (s *ReceptionHandlerSuite) Test_CreateReception_EmptyPvzID() {
-	// Arrange
 	body := map[string]string{"pvzId": ""}
 	bodyBytes, _ := json.Marshal(body)
 
 	req := httptest.NewRequest("POST", "/reception", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleEmployee))
+	req.Header.Set("X-Role", string(models.RoleEmployee))
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(400, resp.StatusCode)
 }
 
-// --- Ошибка: Невалидный UUID ---
 func (s *ReceptionHandlerSuite) Test_CreateReception_InvalidUUID() {
-	// Arrange
 	body := map[string]string{"pvzId": "not-a-uuid"}
 	bodyBytes, _ := json.Marshal(body)
 
 	req := httptest.NewRequest("POST", "/reception", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleEmployee))
+	req.Header.Set("X-Role", string(models.RoleEmployee))
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(400, resp.StatusCode)
 }
 
-// --- Ошибка от UseCase ---
 func (s *ReceptionHandlerSuite) Test_CreateReception_UseCaseError() {
-	// Arrange
 	pvzID := uuid.New()
 	s.mock.On("CreateReception", mock.Anything, pvzID).Return(models.Reception{}, errors.New("fail"))
 
@@ -156,18 +138,15 @@ func (s *ReceptionHandlerSuite) Test_CreateReception_UseCaseError() {
 
 	req := httptest.NewRequest("POST", "/reception", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleEmployee))
+	req.Header.Set("X-Role", string(models.RoleEmployee))
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(400, resp.StatusCode)
 	s.mock.AssertExpectations(s.T())
 }
 
-// --- Запуск ---
 func TestReceptionHandlerSuite(t *testing.T) {
 	suite.Run(t, new(ReceptionHandlerSuite))
 }

@@ -84,7 +84,6 @@ func NewPostgres(ctx context.Context, cfg Postgres) *pgxpool.Pool {
 func fetchConfigPath() string {
 	var res string
 
-	// --config="path/to/config.yaml"
 	flag.StringVar(&res, "config", "", "path to config")
 	flag.Parse()
 

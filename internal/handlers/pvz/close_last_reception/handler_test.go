@@ -1,129 +1,129 @@
-package close_last_reception_test
+package close_last_reception
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"fmt"
+	"github.com/google/uuid"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"AvitoPVZ/internal/handlers/close_last_reception"
 	"AvitoPVZ/internal/models"
 )
 
-// --- Мок UseCase ---
 type mockReceptionUseCase struct {
-	mock.Mock
+	response models.Reception
+	err      error
 }
 
-func (m *mockReceptionUseCase) CloseLastReception(ctx context.Context, pvzID string) (models.Reception, error) {
-	args := m.Called(ctx, pvzID)
-	return args.Get(0).(models.Reception), args.Error(1)
+func (m *mockReceptionUseCase) CloseLastReception(_ context.Context, _ string) (models.Reception, error) {
+	return m.response, m.err
 }
 
-// --- Тестовый сьют ---
-type CloseLastReceptionSuite struct {
+type ReceptionHandlerTestSuite struct {
 	suite.Suite
-	app  *fiber.App
-	mock *mockReceptionUseCase
+	app     *fiber.App
+	useCase *mockReceptionUseCase
+	handler *ReceptionHandler
 }
 
-// --- Setup ---
-func (s *CloseLastReceptionSuite) SetupTest() {
-	s.app = fiber.New()
-	s.mock = new(mockReceptionUseCase)
+func (suite *ReceptionHandlerTestSuite) SetupTest() {
+	suite.app = fiber.New()
 
-	handler := close_last_reception.NewReceptionHandler(s.mock)
-
-	s.app.Post("/reception/:pvzId/close", func(c *fiber.Ctx) error {
-		c.Locals("Role", s.T().Context().Value("role"))
-		return handler.CloseLastReception(c)
+	suite.app.Use(func(c *fiber.Ctx) error {
+		if role := c.Get("X-Role"); role != "" {
+			c.Locals("Role", models.UserRole(role))
+		}
+		return c.Next()
 	})
+
+	suite.useCase = &mockReceptionUseCase{}
+
+	suite.handler = NewReceptionHandler(suite.useCase)
+
+	suite.app.Post("/close/:pvzId", suite.handler.CloseLastReception)
 }
 
-// --- Успешное закрытие приёмки ---
-func (s *CloseLastReceptionSuite) TestCloseLastReception_Success() {
-	// Arrange
-	pvzID := uuid.New().String()
+func (suite *ReceptionHandlerTestSuite) TestAccessDenied() {
+	validUUID := "123e4567-e89b-12d3-a456-426614174000"
+	req := httptest.NewRequest("POST", "/close/"+validUUID, nil)
 
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
+
+	suite.Equal(http.StatusForbidden, resp.StatusCode)
+
+	var body models.ErrorResp
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	suite.Require().NoError(err)
+	suite.Equal("Access denied (only PVZ employee)", body.Message)
+}
+
+func (suite *ReceptionHandlerTestSuite) TestInvalidPvzID() {
+	invalidID := "not-a-valid-uuid"
+	req := httptest.NewRequest("POST", "/close/"+invalidID, nil)
+	req.Header.Set("X-Role", string(models.RoleEmployee))
+
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
+
+	suite.Equal(http.StatusBadRequest, resp.StatusCode)
+	var body models.ErrorResp
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	suite.Require().NoError(err)
+	suite.Equal("PvzID is invalid", body.Message)
+}
+
+func (suite *ReceptionHandlerTestSuite) TestUseCaseError() {
+	validUUID := "123e4567-e89b-12d3-a456-426614174000"
+	suite.useCase.err = errors.New("use case error")
+	req := httptest.NewRequest("POST", "/close/"+validUUID, nil)
+	req.Header.Set("X-Role", string(models.RoleEmployee))
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
+
+	suite.Equal(http.StatusBadRequest, resp.StatusCode)
+	var body models.ErrorResp
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	suite.Require().NoError(err)
+	suite.Equal("use case error", body.Message)
+}
+
+func (suite *ReceptionHandlerTestSuite) TestSuccess() {
+	validUUID := uuid.New()
+
+	id := uuid.New()
 	expectedReception := models.Reception{
-		ID:       1001,
+		ID:       id,
 		DateTime: time.Now(),
-		PvzID:    pvzID,
-		Status:   "CLOSED",
+		PvzID:    validUUID,
+		Status:   models.StatusClose,
 	}
+	suite.useCase.err = nil
+	suite.useCase.response = expectedReception
 
-	s.mock.On("CloseLastReception", mock.Anything, pvzID).
-		Return(expectedReception, nil)
+	req := httptest.NewRequest("POST", "/close/"+validUUID.String(), nil)
+	req.Header.Set("X-Role", string(models.RoleEmployee))
 
-	req := httptest.NewRequest("POST", fmt.Sprintf("/reception/%s/close", pvzID), nil)
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleEmployee))
+	resp, err := suite.app.Test(req)
+	suite.Require().NoError(err)
 
-	// Act
-	resp, err := s.app.Test(req)
+	suite.Equal(http.StatusOK, resp.StatusCode)
+	var payload map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&payload)
+	suite.Require().NoError(err)
 
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(fiber.StatusOK, resp.StatusCode)
-	s.mock.AssertExpectations(s.T())
+	suite.Equal(expectedReception.ID.String(), payload["id"])
+	suite.Equal(expectedReception.DateTime.Format(time.RFC3339Nano), payload["dateTime"])
+	suite.Equal(expectedReception.PvzID.String(), payload["pvzId"])
+	suite.Equal(string(expectedReception.Status), payload["status"])
 }
 
-// --- Ошибка: не сотрудник PVZ ---
-func (s *CloseLastReceptionSuite) TestCloseLastReception_Forbidden() {
-	// Arrange
-	pvzID := uuid.New().String()
-	req := httptest.NewRequest("POST", fmt.Sprintf("/reception/%s/close", pvzID), nil)
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleAdmin))
-
-	// Act
-	resp, err := s.app.Test(req)
-
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(fiber.StatusForbidden, resp.StatusCode)
-}
-
-// --- Ошибка: невалидный UUID ---
-func (s *CloseLastReceptionSuite) TestCloseLastReception_InvalidUUID() {
-	// Arrange
-	invalidPvzID := "not-a-uuid"
-	req := httptest.NewRequest("POST", fmt.Sprintf("/reception/%s/close", invalidPvzID), nil)
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleEmployee))
-
-	// Act
-	resp, err := s.app.Test(req)
-
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(fiber.StatusBadRequest, resp.StatusCode)
-}
-
-// --- Ошибка: usecase вернул ошибку ---
-func (s *CloseLastReceptionSuite) TestCloseLastReception_UseCaseError() {
-	// Arrange
-	pvzID := uuid.New().String()
-	s.mock.On("CloseLastReception", mock.Anything, pvzID).
-		Return(models.Reception{}, errors.New("something went wrong"))
-
-	req := httptest.NewRequest("POST", fmt.Sprintf("/reception/%s/close", pvzID), nil)
-	req = req.WithContext(context.WithValue(req.Context(), "role", models.RoleEmployee))
-
-	// Act
-	resp, err := s.app.Test(req)
-
-	// Assert
-	s.Require().NoError(err)
-	s.Equal(fiber.StatusBadRequest, resp.StatusCode)
-	s.mock.AssertExpectations(s.T())
-}
-
-// --- Запуск тестов ---
-func TestCloseLastReceptionSuite(t *testing.T) {
-	suite.Run(t, new(CloseLastReceptionSuite))
+func TestReceptionHandlerTestSuite(t *testing.T) {
+	suite.Run(t, new(ReceptionHandlerTestSuite))
 }

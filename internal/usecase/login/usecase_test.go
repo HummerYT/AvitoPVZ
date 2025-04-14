@@ -2,7 +2,7 @@ package login_test
 
 import (
 	"AvitoPVZ/internal/models"
-	"AvitoPVZ/internal/usecase/auth/login"
+	"AvitoPVZ/internal/usecase/login"
 	"context"
 	"errors"
 	"testing"
@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// --- Мок БД ---
 type mockDB struct {
 	mock.Mock
 }
@@ -22,19 +21,16 @@ func (m *mockDB) GetUserEmail(ctx context.Context, email string) (models.User, e
 	return args.Get(0).(models.User), args.Error(1)
 }
 
-// --- Тестовая структура ---
 type LoginUseCaseSuite struct {
 	suite.Suite
 	mockDB *mockDB
 	uc     *login.UseCase
 }
 
-// --- Setup ---
 func (s *LoginUseCaseSuite) SetupTest() {
 	s.mockDB = new(mockDB)
 	s.uc = login.NewUseCase(s.mockDB)
 
-	// Заменяем реальную функцию сравнения пароля на стаб
 	s.uc.CompareHashAndPassword = func(hash string, password string) (bool, error) {
 		if hash == "hashed_pass" && password == "plain_pass" {
 			return true, nil
@@ -43,9 +39,7 @@ func (s *LoginUseCaseSuite) SetupTest() {
 	}
 }
 
-// --- Успешный логин ---
 func (s *LoginUseCaseSuite) Test_LoginUser_Success() {
-	// Arrange
 	email := "user@example.com"
 	inputUser := models.User{
 		Email:    email,
@@ -55,15 +49,13 @@ func (s *LoginUseCaseSuite) Test_LoginUser_Success() {
 		ID:       uuid.New(),
 		Email:    email,
 		Password: "hashed_pass",
-		Role:     models.RoleClient,
+		Role:     models.RoleEmployee,
 	}
 
 	s.mockDB.On("GetUserEmail", mock.Anything, email).Return(expectedUser, nil)
 
-	// Act
 	result, err := s.uc.LoginUser(context.Background(), inputUser)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(expectedUser.ID, result.ID)
 	s.Equal(expectedUser.Email, result.Email)
@@ -71,9 +63,7 @@ func (s *LoginUseCaseSuite) Test_LoginUser_Success() {
 	s.mockDB.AssertExpectations(s.T())
 }
 
-// --- Ошибка: пользователь не найден ---
 func (s *LoginUseCaseSuite) Test_LoginUser_UserNotFound() {
-	// Arrange
 	email := "missing@example.com"
 	inputUser := models.User{
 		Email:    email,
@@ -82,18 +72,14 @@ func (s *LoginUseCaseSuite) Test_LoginUser_UserNotFound() {
 
 	s.mockDB.On("GetUserEmail", mock.Anything, email).Return(models.User{}, errors.New("user not found"))
 
-	// Act
 	_, err := s.uc.LoginUser(context.Background(), inputUser)
 
-	// Assert
 	s.Require().Error(err)
 	s.Contains(err.Error(), "failed get user by username")
 	s.mockDB.AssertExpectations(s.T())
 }
 
-// --- Ошибка: неправильный пароль ---
 func (s *LoginUseCaseSuite) Test_LoginUser_IncorrectPassword() {
-	// Arrange
 	email := "user@example.com"
 	inputUser := models.User{
 		Email:    email,
@@ -102,22 +88,19 @@ func (s *LoginUseCaseSuite) Test_LoginUser_IncorrectPassword() {
 	dbUser := models.User{
 		ID:       uuid.New(),
 		Email:    email,
-		Password: "hashed_pass", // ожидаем, что будет невалиден
+		Password: "hashed_pass",
 		Role:     models.RoleEmployee,
 	}
 
 	s.mockDB.On("GetUserEmail", mock.Anything, email).Return(dbUser, nil)
 
-	// Act
 	_, err := s.uc.LoginUser(context.Background(), inputUser)
 
-	// Assert
 	s.Require().Error(err)
 	s.Equal(login.ErrIncorrectPassword, err)
 	s.mockDB.AssertExpectations(s.T())
 }
 
-// --- Запуск ---
 func TestLoginUseCaseSuite(t *testing.T) {
 	suite.Run(t, new(LoginUseCaseSuite))
 }

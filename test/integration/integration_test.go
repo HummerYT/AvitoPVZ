@@ -196,7 +196,6 @@ func TestIntegrationFullFlow(t *testing.T) {
 	closeLastReceptionHandler := close_last_reception.NewReceptionHandler(receptionsUC)
 	pvzGetHandler := pvzGet.NewPVZDataHandler(pvzUC)
 
-	// middleware group
 	jwtToken := jwt.NewMiddleware(cfg.JWT.Secret)
 
 	app.Post("/dummyLogin", dummy_login.DummyLoginHandler, jwtToken.SignedToken)

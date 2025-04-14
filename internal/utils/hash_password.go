@@ -22,5 +22,3 @@ func CompareHashAndPassword(hash, password string) (bool, error) {
 
 	return true, nil
 }
-
-//Пакет utils содержит вспомогательные функции, такие как хэширование паролей и их проверка.

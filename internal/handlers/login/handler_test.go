@@ -17,7 +17,6 @@ import (
 	"AvitoPVZ/internal/models"
 )
 
-// --- Мок login интерфейса ---
 type loginMock struct {
 	mock.Mock
 }
@@ -27,7 +26,6 @@ func (m *loginMock) LoginUser(ctx context.Context, user models.User) (models.Use
 	return args.Get(0).(models.User), args.Error(1)
 }
 
-// --- Тестовая структура ---
 type LoginHandlerSuite struct {
 	suite.Suite
 	app    *fiber.App
@@ -35,7 +33,6 @@ type LoginHandlerSuite struct {
 	router *login.Handler
 }
 
-// --- Setup ---
 func (s *LoginHandlerSuite) SetupTest() {
 	s.app = fiber.New()
 	s.mock = new(loginMock)
@@ -49,7 +46,6 @@ func (s *LoginHandlerSuite) SetupTest() {
 	})
 }
 
-// --- Тест успешного логина ---
 func (s *LoginHandlerSuite) TestRegister_Success() {
 	// Arrange
 	reqBody := login.UserLoginIn{
@@ -73,50 +69,41 @@ func (s *LoginHandlerSuite) TestRegister_Success() {
 	req := httptest.NewRequest("POST", "/login", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(fiber.StatusOK, resp.StatusCode)
 	s.mock.AssertExpectations(s.T())
 }
 
-// --- Тест с невалидным JSON ---
 func (s *LoginHandlerSuite) TestRegister_InvalidJSON() {
-	// Arrange
+
 	req := httptest.NewRequest("POST", "/login", bytes.NewBufferString(`invalid-json`))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(fiber.StatusBadRequest, resp.StatusCode)
 }
 
-// --- Тест с ошибкой валидации (простой пароль) ---
 func (s *LoginHandlerSuite) TestRegister_ValidationError() {
-	// Arrange
+
 	reqBody := login.UserLoginIn{
 		Email:    "test@example.com",
-		Password: "123", // слабый пароль
+		Password: "123",
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
 	req := httptest.NewRequest("POST", "/login", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(fiber.StatusBadRequest, resp.StatusCode)
 }
 
-// --- Тест когда LoginUser возвращает ошибку ---
 func (s *LoginHandlerSuite) TestRegister_LoginError() {
 	// Arrange
 	reqBody := login.UserLoginIn{
@@ -130,16 +117,13 @@ func (s *LoginHandlerSuite) TestRegister_LoginError() {
 	req := httptest.NewRequest("POST", "/login", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Act
 	resp, err := s.app.Test(req)
 
-	// Assert
 	s.Require().NoError(err)
 	s.Equal(fiber.StatusBadRequest, resp.StatusCode)
 	s.mock.AssertExpectations(s.T())
 }
 
-// --- Запуск ---
 func TestLoginHandlerSuite(t *testing.T) {
 	suite.Run(t, new(LoginHandlerSuite))
 }

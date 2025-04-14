@@ -66,20 +66,17 @@ func main() {
 	pool := config.NewPostgres(ctx, cfg.Postgres)
 	defer pool.Close()
 
-	// repository group
 	registerPool := authPool.NewInsertRepo(pool)
 	pvzRepo := pvzRepository.NewPVZRepositoryPostgres(pool)
 	receptionsRepo := receptionsRepository.NewReceptionRepositoryPg(pool)
 	productsRepo := productsRepository.NewProductRepositoryPg(pool)
 
-	// usecase group
 	registerUC := registerUseCase.NewUseCase(registerPool)
 	loginUC := loginUseCase.NewUseCase(registerPool)
 	pvzUC := pvzUseCase.NewPVZUseCase(pvzRepo)
 	receptionsUC := receptionsUseCase.NewReceptionUseCase(receptionsRepo)
 	productsUC := productsUseCase.NewProductUseCase(productsRepo)
 
-	// handlers group
 	registerHandler := register.NewHandler(registerUC)
 	loginHandler := login.NewHandler(loginUC)
 	pvzCreateHandler := pvzPost.NewCreatePVZHandler(pvzUC)
@@ -89,7 +86,6 @@ func main() {
 	closeLastReceptionHandler := close_last_reception.NewReceptionHandler(receptionsUC)
 	pvzGetHandler := pvzGet.NewPVZDataHandler(pvzUC)
 
-	// middleware group
 	jwtToken := jwt.NewMiddleware(cfg.JWT.Secret)
 
 	app.Post("/dummyLogin", dummy_login.DummyLoginHandler, jwtToken.SignedToken)
